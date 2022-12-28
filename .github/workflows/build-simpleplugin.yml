@@ -75,7 +75,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -A ${{ matrix.cmakearch }}
+          cmake .. -DCMAKE_BUILD_TYPE=Release -A ${{ matrix.arch }}
           cmake --build . --parallel $(nproc) --config Release
 # --------------------------------------------------------
       - name: macOS - ${{ matrix.qt_version }} - Generate Dependencies and Build
