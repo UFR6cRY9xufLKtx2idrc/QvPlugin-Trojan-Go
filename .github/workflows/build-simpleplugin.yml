@@ -4,28 +4,17 @@ on:
   push:
   release:
     types: [prereleased]
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
       matrix:
-        qt_version: [5.11.3]
-        platform: [ubuntu-16.04, macos-latest, windows-latest]
-        arch: [x86, x64]
-        include: 
+        qt_version: [5.15.2]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
+        include:
           - platform: windows-latest
-            arch: x86
-            qtarch: win32_msvc2015
-            cmakearch: Win32
-          - platform: windows-latest
-            arch: x64
-            qtarch: win64_msvc2015_64
-            cmakearch: x64
-        exclude:
-          - platform: ubuntu-16.04
-            arch: x86
-          - platform: macos-latest
-            arch: x86
+            qtarch: win64_msvc2019_64
       fail-fast: false
         
     runs-on: ${{ matrix.platform }}
@@ -39,13 +28,15 @@ jobs:
       - name: Get Plugin Name
         id: get_name
         shell: bash
-        run: echo ::set-output name=NAME::QvPlugin-TrojanGo
+        run: echo ::set-output name=NAME::QvPlugin-Trojan-Go
       - name: Checking out sources
-        uses: actions/checkout@master
-      - name: Install Python 3.7 version
-        uses: actions/setup-python@v1
+        uses: actions/checkout@v3
         with:
-          python-version: '3.7'
+          submodules: "recursive"
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
           architecture: ${{ matrix.arch }}
       - name: Restoring submodules
         run: git submodule update --init
@@ -54,21 +45,26 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          toolset: 14.2
+          toolset: 14.29
           arch: ${{ matrix.arch }}
       - name: Cache Qt
         id: cache-qt
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: ../Qt
-          key: QtCache-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.qt_version }}-${{ matrix.qtarch }}
+          key: QtCache-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.qt_version }}
       - name: Installing Qt - ${{ matrix.arch }}
-        uses: jurplel/install-qt-action@v2.5.3
+        uses: jurplel/install-qt-action@v3
         with:
           version: ${{ matrix.qt_version }}
           arch: ${{ matrix.qtarch }}
-          mirror: 'http://mirrors.ocf.berkeley.edu/qt/'
           cached: ${{ steps.cache-qt.outputs.cache-hit }}
+      # =========================================================================================================
+      - name: Linux - ${{ matrix.qt_version }} - Build preparation - Install Packages
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y libgl-dev libx11-dev libxkbcommon-x11-dev libxcb-image0-dev libxcb-icccm4-dev libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0
 # ========================================================================================================= Generate MakeFile and Build
       - name: Windows - ${{ matrix.qt_version }} - Generate Dependencies and Build
         shell: bash
@@ -92,11 +88,11 @@ jobs:
           cmake --build . --parallel $(sysctl -n hw.logicalcpu)
 # --------------------------------------------------------
       - name: Linux - ${{ matrix.qt_version }} - Generate Dependencies and Build
-        if: matrix.platform == 'ubuntu-16.04'
+        if: matrix.platform == 'ubuntu-latest'
         shell: bash
         env:
-          CC: gcc-7
-          CXX: g++-7
+          CC: gcc-9
+          CXX: g++-9
           CXXFLAGS: -fno-sized-deallocation
         run: |
           mkdir build
@@ -106,13 +102,13 @@ jobs:
 # ========================================================================================================= Deployments
       - name: Win-${{ matrix.arch }} - ${{ matrix.qt_version }} - Uploading artifact
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.get_name.outputs.NAME }}-${{ github.sha }}.Windows-${{ matrix.arch }}.qt${{ matrix.qt_version }}.dll
           path: build/Release/${{ steps.get_name.outputs.NAME }}.dll
       - name: Win-${{ matrix.arch }} - ${{ matrix.qt_version }} - Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
-        if: github.event_name == 'release' && matrix.platform == 'windows-latest'
+        uses: svenstaro/upload-release-action@v2
+        if: matrix.platform == 'windows-latest'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: build/Release/${{ steps.get_name.outputs.NAME }}.dll
@@ -122,13 +118,13 @@ jobs:
 # --------------------------------------------------------
       - name: macOS - ${{ matrix.qt_version }} - Uploading Artifact
         if: matrix.platform == 'macos-latest'
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.get_name.outputs.NAME }}-${{ github.sha }}.macOS-${{ matrix.arch }}.qt${{ matrix.qt_version }}.so
           path: build/lib${{ steps.get_name.outputs.NAME }}.so
       - name: macOS - ${{ matrix.qt_version }} - Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
-        if: github.event_name == 'release' && matrix.platform == 'macos-latest'
+        uses: svenstaro/upload-release-action@v2
+        if: matrix.platform == 'macos-latest'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: build/lib${{ steps.get_name.outputs.NAME }}.so
@@ -137,14 +133,14 @@ jobs:
           overwrite: true
 # --------------------------------------------------------
       - name: Linux - ${{ matrix.qt_version }} - Uploading artifact
-        if: matrix.platform == 'ubuntu-16.04'
-        uses: actions/upload-artifact@master
+        if: matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.get_name.outputs.NAME }}-${{ github.sha }}.linux-${{ matrix.arch }}.qt${{ matrix.qt_version }}.so
           path: build/lib${{ steps.get_name.outputs.NAME }}.so
       - name: Linux - ${{ matrix.qt_version }} - Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
-        if: github.event_name == 'release' && matrix.platform == 'ubuntu-16.04'
+        uses: svenstaro/upload-release-action@v2
+        if: matrix.platform == 'ubuntu-latest'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: build/lib${{ steps.get_name.outputs.NAME }}.so
